@@ -1,0 +1,7 @@
+{
+  "name": "Google Meet Slack App",
+  "description": "Slack App for Google Meet",
+  "keywords": ["go", "slack", "google", "meet"],
+  "website": "http://github.com/sarangjo/google-meet-slack",
+  "repository": "http://github.com/sarangjo/google-meet-slack"
+}
