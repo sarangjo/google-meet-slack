@@ -1,2 +1,13 @@
+# Exe
 bin/
 .docker_build/
+google-meet-slack*
+
+# Google calendar
+credentials.json
+token.json
+
+# Slack
+slack-signing.txt
+
+*.swp
