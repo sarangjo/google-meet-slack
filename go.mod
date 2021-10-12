@@ -9,4 +9,5 @@ require (
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	go.mongodb.org/mongo-driver v1.4.0
 	google.golang.org/api v0.24.0
+	github.com/gorilla/sessions v1.2.0
 )

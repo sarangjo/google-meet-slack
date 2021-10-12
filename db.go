@@ -48,5 +48,13 @@ const tokenCollection = "tokens"
 // lookupToken finds a token identified by user id and team id
 func lookupToken(userID string, teamID string, token *Token) error {
 	tokens := db.Collection(tokenCollection)
-	return tokens.FindOne(context.Background(), bson.M{"teamId": teamID, "userId": userID}).Decode(token)
+	return tokens.FindOne(context.Background(), bson.M{"teamid": teamID, "userid": userID}).Decode(token)
+}
+
+func saveToken(token *Token) error {
+	tokens := db.Collection(tokenCollection)
+
+	opts := options.Update().SetUpsert(true)
+	_, err := tokens.UpdateOne(context.Background(), bson.M{"teamid": token.TeamID, "userid": token.UserID}, bson.M{"$set": token}, opts)
+	return err
 }

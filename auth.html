@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <p>{{.Hello}} Hello, world!</p>
+    <h1>Slack</h1>
+    <div>
+      {{if and .SlackUserID .SlackTeamID}} Signed in with Slack as {{.SlackUserID}} for team
+      {{.SlackTeamID}}! {{else}} Sign in with slack:
+      <a
+        href="https://slack.com/oauth/v2/authorize?user_scope=identity.basic&client_id=654762687334.1130021352737"
+        ><img alt=""Sign in with Slack"" height="40" width="172"
+        src="https://platform.slack-edge.com/img/sign_in_with_slack.png"
+        srcset="https://platform.slack-edge.com/img/sign_in_with_slack.png 1x,
+        https://platform.slack-edge.com/img/sign_in_with_slack@2x.png 2x" /></a
+      >
+      {{end}}
+    </div>
+    <h1>Google</h1>
+    <div>
+      <a
+        href="https://accounts.google.com/o/oauth2/v2/auth?client_id=1035206939710-u3chvhivekhhi3v7qbcuddu4ktd8paou.apps.googleusercontent.com&redirect_uri=http%3A%2F%2Flocalhost%3A5555%2FgoogleRedirect&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.events"
+      >
+        Sign in to google</a
+      >
+      {{.GoogleAccessToken}}
+    </div>
+    <h1>Connect</h1>
+    <a href="/connect">Connect</a>
+  </body>
+</html>

@@ -1,6 +1,6 @@
 # google-meet-slack
 
-Slack bot to create Google Meet links instantaneously
+Slack slash command to create Google Meet links instantaneously
 
 ## Workflow
 
@@ -12,3 +12,8 @@ Slack bot to create Google Meet links instantaneously
 ## Db
 
 Stores links from slack user ID to google auth token
+
+## Environment variables
+
+$PORT: port to listen on
+$SLACK_SIGNING_SECRET: Slack signing secret used to verify incoming requests from Slack

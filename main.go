@@ -7,10 +7,13 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"text/template"
+	"time"
 
+	"github.com/gorilla/sessions"
 	"github.com/slack-go/slack"
 	"golang.org/x/oauth2"
 )
@@ -19,10 +22,220 @@ var (
 	signingSecret string
 	port          string
 	tmpl          *template.Template
+	// key must be 16, 24 or 32 bytes long (AES-128, AES-192 or AES-256)
+	key   = []byte("super-secret-key")
+	store = sessions.NewCookieStore(key)
 )
 
+type templateData struct {
+	Hello             string
+	SlackUserID       string
+	SlackTeamID       string
+	GoogleAccessToken string
+}
+
+const cookieName = "cookie-name"
+
+const (
+	sessionActive  = "active"
+	sessionUserID  = "userID"
+	sessionTeamID  = "teamID"
+	sessionToken   = "accessToken"
+	sessionRefresh = "refreshToken"
+	sessionExpiry  = "expiry"
+)
+
+// TODO session expiry?
 func authHandler(w http.ResponseWriter, r *http.Request) {
-	tmpl.Execute(w, nil)
+	session, err := store.Get(r, cookieName)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	session.Values[sessionActive] = true
+	slackUserID, ok := session.Values[sessionUserID].(string)
+	if !ok {
+		slackUserID = ""
+	}
+	slackTeamID, ok := session.Values[sessionTeamID].(string)
+	if !ok {
+		slackTeamID = ""
+	}
+	googleAccessToken, ok := session.Values[sessionToken].(string)
+	if !ok {
+		googleAccessToken = "" // oauth2.Token{}
+	}
+
+	data := templateData{
+		Hello:             "lulmaozedong",
+		SlackUserID:       slackUserID,
+		SlackTeamID:       slackTeamID,
+		GoogleAccessToken: googleAccessToken,
+	}
+
+	session.Save(r, w)
+
+	err = tmpl.Execute(w, data)
+	if err != nil {
+		fmt.Println("Unable to execute template", err)
+	}
+}
+
+func connectHandler(w http.ResponseWriter, r *http.Request) {
+	session, err := store.Get(r, cookieName)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	auth, ok := session.Values[sessionActive].(bool)
+	fmt.Println("auth", auth, "ok", ok)
+	if !auth || !ok {
+		fmt.Println("Hasn't set active to true")
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	fmt.Println("Method", r.Method, "URL", r.URL.Query().Encode())
+
+	slackUserID, _ := session.Values[sessionUserID].(string)
+	slackTeamID, _ := session.Values[sessionTeamID].(string)
+	googleAccessToken, _ := session.Values[sessionToken].(string)
+	if slackUserID == "" || slackTeamID == "" || googleAccessToken == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Session variables not set. go to /auth"))
+		return
+	}
+	refreshToken, _ := session.Values[sessionRefresh].(string)
+	expiry, _ := session.Values[sessionExpiry].(time.Time)
+
+	// Persist to db
+	tok := Token{
+		TeamID: slackTeamID,
+		UserID: slackUserID,
+		OAuthToken: oauth2.Token{
+			AccessToken:  googleAccessToken,
+			RefreshToken: refreshToken,
+			Expiry:       expiry,
+		},
+	}
+	err = saveToken(&tok)
+	if err != nil {
+		fmt.Println("unable to persist and save connection")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Successfully connected! You can now run /gmeet in Slack"))
+}
+
+func slackRedirectHandler(w http.ResponseWriter, r *http.Request) {
+	session, err := store.Get(r, cookieName)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	auth, ok := session.Values[sessionActive].(bool)
+	fmt.Println("auth", auth, "ok", ok)
+	if !auth || !ok {
+		fmt.Println("Hasn't set active to true")
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	fmt.Println("Method", r.Method, "URL", r.URL.Query().Encode())
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		fmt.Println("No code param")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("No code param provided"))
+		return
+	}
+
+	// Get slack auth information
+	clientID := "654762687334.1130021352737"
+	clientSecret := "3d6e8dcd6658845f56cac08152db93ea"
+
+	httpClient := &http.Client{}
+
+	resp, err := slack.GetOAuthV2Response(httpClient, clientID, clientSecret, code, "")
+	if err != nil || !resp.Ok {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Unable to get user information"))
+		return
+	}
+
+	fmt.Println("user id", resp.AuthedUser.ID, "team id", resp.Team.ID, "team name", resp.Team.Name)
+
+	session.Values[sessionUserID] = resp.AuthedUser.ID
+	session.Values[sessionTeamID] = resp.Team.ID
+	session.Save(r, w)
+
+	http.Redirect(w, r, "/auth", http.StatusTemporaryRedirect)
+}
+
+func googleRedirectHandler(w http.ResponseWriter, r *http.Request) {
+	session, err := store.Get(r, cookieName)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	auth, ok := session.Values[sessionActive].(bool)
+	fmt.Println("auth", auth, "ok", ok)
+	if !auth || !ok {
+		fmt.Println("Hasn't set active to true")
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	fmt.Println("Method", r.Method, "URL", r.URL.Query().Encode())
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		fmt.Println("No code param")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("No code param provided"))
+		return
+	}
+
+	resp, err := http.PostForm("https://oauth2.googleapis.com/token",
+		url.Values{
+			"code":          {code},
+			"client_id":     {"1035206939710-u3chvhivekhhi3v7qbcuddu4ktd8paou.apps.googleusercontent.com"},
+			"client_secret": {"NLNmqGT07m8rkSmtwp8XKo6y"},
+			"redirect_uri":  {"http://localhost:5555/googleRedirect"},
+			"grant_type":    {"authorization_code"},
+		},
+	)
+	if err != nil {
+		fmt.Println("unable to get oauth token")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("unable to read body")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	var token oauth2.Token
+	err = json.Unmarshal(body, &token)
+	if err != nil {
+		fmt.Println("unable to unmarshal json")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	fmt.Println("access token", token.AccessToken)
+
+	session.Values[sessionToken] = token.AccessToken
+	session.Values[sessionRefresh] = token.RefreshToken
+	session.Values[sessionExpiry] = token.Expiry
+	session.Save(r, w)
+
+	http.Redirect(w, r, "/auth", http.StatusTemporaryRedirect)
 }
 
 const shouldVerify = false
@@ -147,11 +360,14 @@ func main() {
 	initializeDbClient()
 	initializeCalendarConfig()
 
-	http.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
+	// Auth endpoints
 	http.HandleFunc("/auth", authHandler)
+	http.HandleFunc("/slackRedirect", slackRedirectHandler)
+	http.HandleFunc("/googleRedirect", googleRedirectHandler)
+	http.HandleFunc("/connect", connectHandler)
+	// Slash command handler
 	http.HandleFunc("/new", getLinkHandler)
+	// Catch-all
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Hey I love %s!", r.URL.Path[1:])
 	})
